@@ -1,1 +1,240 @@
 
+
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Board Game 2 Pemain (dengan Rekod)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .board { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+    .cell { aspect-ratio: 1 / 1; display:flex; align-items:center; justify-content:center; border-radius:10px; position:relative; padding:8px; }
+    .cell-number { position:absolute; top:6px; left:8px; font-size:12px; color:#374151; }
+    .token { width:34px; height:34px; border-radius:999px; display:flex; align-items:center; justify-content:center; color:white; font-weight:700;
+             transition: transform 300ms cubic-bezier(.2,.8,.2,1); margin:2px; }
+    @media (max-width:640px) {
+      .token { width:26px; height:26px; font-size:12px; }
+      .cell-number { font-size:11px; }
+    }
+    .modal-backdrop { background: rgba(15,23,42,0.6); }
+    .hidden-scroll { max-height:200px; overflow:auto; }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-sky-50 via-emerald-50 to-yellow-50 min-h-screen flex items-start justify-center p-4">
+  <div class="w-full max-w-5xl bg-white rounded-2xl shadow-xl p-6">
+    <header class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-4">
+      <div>
+        <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Board Game (2 Pemain)</h1>
+        <p class="text-sm text-slate-600 mt-1">Putaran & Peredaran Bumi — Jawab soalan & kumpul skor. Keputusan akhir disimpan dalam LocalStorage ✔️</p>
+      </div>
+      <div class="flex gap-2 items-center">
+        <div class="text-sm text-slate-700">Giliran: <span id="turnLabel" class="font-semibold text-indigo-600">Pemain 1 (Biru)</span></div>
+        <button id="resetBtn" class="ml-2 bg-gray-200 hover:bg-gray-300 text-slate-700 px-3 py-1 rounded">Reset</button>
+      </div>
+    </header>
+
+    <div class="grid lg:grid-cols-2 gap-6">
+      <!-- BOARD -->
+      <div>
+        <div class="board" id="board"></div>
+
+        <div class="mt-4 flex flex-wrap items-center justify-between gap-4">
+          <div class="flex items-center gap-4">
+            <div>
+              <div class="text-xs text-slate-500">Posisi Pemain 1</div>
+              <div id="posP1" class="text-lg font-semibold text-slate-800">0</div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500">Posisi Pemain 2</div>
+              <div id="posP2" class="text-lg font-semibold text-slate-800">0</div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500">Dice</div>
+              <div id="dice" class="text-xl font-bold">—</div>
+            </div>
+          </div>
+
+          <div class="flex gap-2">
+            <button id="rollBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow">🎲 Roll Dice</button>
+            <button id="endTurnBtn" class="bg-yellow-400 hover:bg-yellow-500 text-slate-800 px-3 py-2 rounded">Pass</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- INFO / SCORE -->
+      <div>
+        <div class="bg-slate-50 p-4 rounded-lg mb-4">
+          <h3 class="font-semibold text-slate-800 mb-2">Peraturan Ringkas</h3>
+          <ul class="text-sm text-slate-600 space-y-1">
+            <li>• Dua pemain bergilir roll dadu.</li>
+            <li>• Kotak 🔷 = Soalan. Betul: +2 langkah & +1 skor. Salah: -2 langkah.</li>
+            <li>• Pemenang = sampai kotak 30 dahulu.</li>
+          </ul>
+        </div>
+
+        <div class="bg-white p-4 rounded-lg shadow mb-4">
+          <h4 class="text-slate-800 font-semibold mb-2">Skor & Status</h4>
+          <div class="text-sm text-slate-700 space-y-2">
+            <div>Pemain 1 (Biru) - Pos: <span id="displayP1">0</span> | Skor: <span id="scoreP1">0</span></div>
+            <div>Pemain 2 (Merah) - Pos: <span id="displayP2">0</span> | Skor: <span id="scoreP2">0</span></div>
+            <div>Giliran: <span id="currentTurn">Pemain 1</span></div>
+          </div>
+        </div>
+
+        <div class="bg-white p-4 rounded-lg shadow mb-4">
+          <h4 class="text-slate-800 font-semibold mb-2">Sejarah & Log</h4>
+          <div id="log" class="text-sm text-slate-600 hidden-scroll"></div>
+        </div>
+
+        <div class="bg-white p-4 rounded-lg shadow">
+          <h4 class="text-slate-800 font-semibold mb-2">Rekod Permainan (disimpan)</h4>
+          <div id="history" class="text-sm text-slate-700 space-y-2">Tiada rekod lagi.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUESTION MODAL -->
+  <div id="questionModal" class="fixed inset-0 hidden items-center justify-center z-50">
+    <div class="modal-backdrop absolute inset-0"></div>
+    <div class="relative bg-white rounded-lg shadow-2xl w-11/12 max-w-2xl p-4 z-10">
+      <div class="flex justify-between items-start">
+        <h3 class="text-lg font-semibold text-slate-800">Soalan</h3>
+        <button id="closeQ" class="text-slate-500 hover:text-slate-700">✕</button>
+      </div>
+      <p id="qText" class="mt-3 text-slate-700"></p>
+      <div id="qOptions" class="mt-4 grid gap-2"></div>
+      <div class="mt-4 flex justify-end gap-2">
+        <button id="qOk" class="bg-indigo-600 text-white px-3 py-1 rounded hidden">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // BASIC CONFIG
+    const TOTAL_CELLS = 30;
+    const QUESTION_CELLS = [3,6,9,12,15,18,21,24,27];
+    const BONUS = 2, PENALTY = 2;
+
+    const questions = [
+      { q:"Apakah kesan utama putaran Bumi?",options:["Perubahan musim","Siang & malam","Solstis","Perubahan tahun"],ans:1 },
+      { q:"Fenomena akibat peredaran Bumi?",options:["Siang & malam","Zon masa","Musim","Arah angin"],ans:2 },
+      { q:"Berapa lama putaran Bumi?",options:["12 jam","24 jam","30 hari","365 hari"],ans:1 },
+      { q:"Peredaran Bumi = ...",options:["24 jam","30 hari","365 ¼ hari","7 hari"],ans:2 },
+      { q:"Gaya Coriolis disebabkan ...",options:["Peredaran","Latitud","Putaran","Orbit"],ans:2 },
+      { q:"Pada ekuinoks siang & malam ...",options:["Siang lebih panjang","Malam lebih panjang","Sama panjang","Tiada siang"],ans:2 },
+      { q:"Matahari terbit di timur kerana ...",options:["Peredaran","Putaran","Bulan","Atmosfera"],ans:1 },
+      { q:"Musim berlaku kerana ...",options:["Putaran","Peredaran + paksi condong","Tekanan udara","Manusia"],ans:1 }
+    ];
+
+    // STATE
+    let pos=[0,0], scores=[0,0], currentPlayer=0, gameOver=false;
+
+    // DOM
+    const boardEl=document.getElementById('board'), rollBtn=document.getElementById('rollBtn'), endTurnBtn=document.getElementById('endTurnBtn'),
+    diceEl=document.getElementById('dice'), posP1=document.getElementById('posP1'), posP2=document.getElementById('posP2'),
+    displayP1=document.getElementById('displayP1'), displayP2=document.getElementById('displayP2'),
+    scoreP1=document.getElementById('scoreP1'), scoreP2=document.getElementById('scoreP2'),
+    turnLabel=document.getElementById('turnLabel'), currentTurn=document.getElementById('currentTurn'),
+    logEl=document.getElementById('log'), historyEl=document.getElementById('history');
+
+    const qModal=document.getElementById('questionModal'), qText=document.getElementById('qText'), qOptions=document.getElementById('qOptions'),
+    qOk=document.getElementById('qOk'), closeQ=document.getElementById('closeQ');
+
+    // INIT BOARD
+    function createBoard(){
+      boardEl.innerHTML='';
+      for(let i=1;i<=TOTAL_CELLS;i++){
+        const c=document.createElement('div');
+        c.className='cell bg-white border';
+        if(i===TOTAL_CELLS) c.classList.add('bg-amber-100');
+        if(QUESTION_CELLS.includes(i)) c.classList.add('bg-sky-50');
+        c.id='cell-'+i;
+        c.innerHTML=`<div class="cell-number">#${i}</div><div>${QUESTION_CELLS.includes(i)?'🔷':''}${i===1?'Mula':(i===TOTAL_CELLS?'Finish':'')}</div>`;
+        boardEl.appendChild(c);
+      }
+      placeTokens();
+    }
+    function placeTokens(){
+      document.querySelectorAll('.token').forEach(t=>t.remove());
+      if(pos[0]>0){const cell=document.getElementById('cell-'+pos[0]);if(cell){let t=document.createElement('div');t.className='token bg-indigo-600';t.textContent='1';cell.appendChild(t);}}
+      if(pos[1]>0){const cell=document.getElementById('cell-'+pos[1]);if(cell){let t=document.createElement('div');t.className='token bg-red-600';t.textContent='2';cell.appendChild(t);}}
+    }
+    function log(m){const d=document.createElement('div');d.textContent=m;logEl.prepend(d);}
+    function updateUI(){
+      posP1.textContent=pos[0]; posP2.textContent=pos[1]; displayP1.textContent=pos[0]; displayP2.textContent=pos[1];
+      scoreP1.textContent=scores[0]; scoreP2.textContent=scores[1];
+      turnLabel.textContent=currentPlayer===0?'Pemain 1 (Biru)':'Pemain 2 (Merah)';
+      currentTurn.textContent=currentPlayer===0?'Pemain 1':'Pemain 2';
+    }
+
+    // ROLL
+    function rollDice(){
+      if(gameOver) return;
+      rollBtn.disabled=true; endTurnBtn.disabled=true;
+      const roll=Math.floor(Math.random()*6)+1; diceEl.textContent=roll; log(`Pemain ${currentPlayer+1} gulung ${roll}`);
+      animateMove(roll);
+    }
+    function animateMove(steps){let left=steps; const int=setInterval(()=>{if(left<=0){clearInterval(int);
+        if(pos[currentPlayer]>=TOTAL_CELLS){pos[currentPlayer]=TOTAL_CELLS;updateUI();announceWinner(currentPlayer);return;}
+        if(QUESTION_CELLS.includes(pos[currentPlayer])){showQuestion();}
+        else{rollBtn.disabled=false; endTurnBtn.disabled=false;}
+        return;}
+        left--; moveOne();},160);}
+    function moveOne(){pos[currentPlayer]++; if(pos[currentPlayer]>TOTAL_CELLS)pos[currentPlayer]=TOTAL_CELLS; placeTokens(); updateUI();}
+
+    // QUESTION
+    let activeQ=null;
+    function showQuestion(){
+      activeQ=questions[Math.floor(Math.random()*questions.length)];
+      qText.textContent=activeQ.q; qOptions.innerHTML='';
+      activeQ.options.forEach((o,i)=>{let b=document.createElement('button');b.className='w-full border p-2 rounded';b.textContent=o;
+        b.onclick=()=>answer(i); qOptions.appendChild(b);});
+      qModal.classList.remove('hidden'); qModal.classList.add('flex');
+    }
+    function closeQModal(){qModal.classList.add('hidden'); qModal.classList.remove('flex'); qOk.classList.add('hidden');}
+    function answer(i){
+      Array.from(qOptions.children).forEach(b=>b.disabled=true);
+      const correct=i===activeQ.ans;
+      if(correct){scores[currentPlayer]++; log(`Pemain ${currentPlayer+1} betul +${BONUS} langkah +1 skor`); pos[currentPlayer]+=BONUS;}
+      else{log(`Pemain ${currentPlayer+1} salah -${PENALTY} langkah`); pos[currentPlayer]-=PENALTY;}
+      if(pos[currentPlayer]<0)pos[currentPlayer]=0; if(pos[currentPlayer]>TOTAL_CELLS)pos[currentPlayer]=TOTAL_CELLS;
+      placeTokens(); updateUI(); qOk.classList.remove('hidden');
+      qOk.onclick=()=>{closeQModal(); if(pos[currentPlayer]>=TOTAL_CELLS){announceWinner(currentPlayer);return;}
+        rollBtn.disabled=false; endTurnBtn.disabled=false; switchTurn();};
+    }
+
+    // TURN
+    function switchTurn(){currentPlayer=currentPlayer===0?1:0; updateUI(); log(`Giliran Pemain ${currentPlayer+1}`);}
+    function endTurn(){log(`Pemain ${currentPlayer+1} tamat giliran`); switchTurn();}
+
+    // WINNER
+    function announceWinner(p){
+      gameOver=true; rollBtn.disabled=true; endTurnBtn.disabled=true;
+      const msg=`Pemenang: Pemain ${p+1} | Skor Akhir P1=${scores[0]}, P2=${scores[1]}`; log(msg); alert(msg);
+      saveHistory(p);
+    }
+
+    // LOCAL STORAGE
+    function saveHistory(winner){
+      const record={date:new Date().toLocaleString(),winner:`Pemain ${winner+1}`,score1:scores[0],score2:scores[1]};
+      let arr=JSON.parse(localStorage.getItem('gameHistory')||'[]'); arr.unshift(record); if(arr.length>5)arr.pop();
+      localStorage.setItem('gameHistory',JSON.stringify(arr)); renderHistory();
+    }
+    function renderHistory(){
+      const arr=JSON.parse(localStorage.getItem('gameHistory')||'[]');
+      if(arr.length===0){historyEl.textContent='Tiada rekod lagi.';return;}
+      historyEl.innerHTML=arr.map(r=>`<div>📌 ${r.date} → ${r.winner} (P1=${r.score1}, P2=${r.score2})</div>`).join('');
+    }
+
+    // RESET
+    function reset(){pos=[0,0];scores=[0,0];currentPlayer=0;gameOver=false;diceEl.textContent='—';logEl.innerHTML='';
+      rollBtn.disabled=false; endTurnBtn.disabled=false;createBoard();updateUI();log('Permainan baru dimulakan');}
+
+    // INIT
+    createBoard(); updateUI(); renderHistory();
+    rollBtn.onclick=rollDice; endTurnBtn.onclick=endTurn; closeQ.onclick=closeQModal; document.getElementById('resetBtn').onclick=reset;
+  </script>
+</body>
+</html>
