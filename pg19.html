@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Board Game Geografi</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .board { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+    .cell { aspect-ratio: 1/1; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:8px; position:relative; font-size:11px; text-align:center; padding:2px; }
+    .cell-number { position:absolute; top:2px; left:4px; font-size:9px; color:#374151; }
+    .token { width:24px; height:24px; border-radius:999px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;
+             border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3); margin:1px; }
+    .modal-backdrop { background: rgba(15,23,42,0.6); }
+    .hidden-scroll { max-height:160px; overflow:auto; }
+    .color1 { background:#dbeafe; }
+    .color2 { background:#dcfce7; }
+    .color3 { background:#fef9c3; }
+    .start { background:#f0abfc; }
+    .finish { background:#fcd34d; }
+    .question { background:#bae6fd; border:2px solid #0284c7; }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-sky-50 via-emerald-50 to-yellow-50 min-h-screen flex items-start justify-center p-4">
+  <div class="w-full max-w-5xl bg-white rounded-2xl shadow-xl p-4">
+    <h1 class="text-xl md:text-2xl font-bold text-slate-800 mb-3">🎲 Board Game: Putaran & Peredaran Bumi</h1>
+
+    <!-- Pilih mod -->
+    <div id="modeSelect" class="mb-4">
+      <p class="font-semibold mb-2">Pilih Mod Permainan:</p>
+      <button onclick="setMode('2')" class="bg-indigo-600 text-white px-3 py-1 rounded mr-2">👥 2 Pemain</button>
+      <button onclick="setMode('1')" class="bg-green-600 text-white px-3 py-1 rounded">🤖 1 Pemain vs Komputer</button>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-4">
+      <!-- BOARD -->
+      <div>
+        <div class="board" id="board"></div>
+        <div class="mt-2 flex justify-between items-center">
+          <div class="text-sm">Giliran: <span id="turnLabel" class="font-semibold text-indigo-600">Pemain 1 (Biru)</span></div>
+          <div class="flex gap-2">
+            <button id="rollBtn" class="bg-indigo-600 text-white px-3 py-1 rounded">Roll</button>
+            <button id="endTurnBtn" class="bg-yellow-400 text-slate-800 px-3 py-1 rounded">Pass</button>
+            <button id="resetBtn" class="bg-gray-300 px-3 py-1 rounded">Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- INFO -->
+      <div class="space-y-3">
+        <div class="bg-slate-50 p-2 rounded text-sm">
+          <h4 class="font-semibold mb-1">📜 Arahan Permainan</h4>
+          <ul class="list-disc list-inside text-xs text-slate-700 space-y-1">
+            <li>Pilih sama ada main 👥 2 Pemain atau 🤖 1 Pemain vs Komputer.</li>
+            <li>Dua pemain bergilir roll dadu 🎲.</li>
+            <li>Jika jatuh di kotak ❓, jawab soalan.</li>
+            <li>Betul → +2 langkah & +1 skor.</li>
+            <li>Salah → -2 langkah.</li>
+            <li>Pemain pertama sampai kotak 🏆 adalah pemenang.</li>
+          </ul>
+        </div>
+
+        <div class="bg-slate-50 p-2 rounded text-sm">
+          <p id="labelP1">Pos P1: <span id="posP1">0</span> | Skor: <span id="scoreP1">0</span></p>
+          <p id="labelP2">Pos P2: <span id="posP2">0</span> | Skor: <span id="scoreP2">0</span></p>
+          <p>🎲 Dadu: <span id="dice">—</span> <span id="diceIcon"></span></p>
+        </div>
+
+        <div class="bg-white p-2 rounded shadow hidden-scroll text-xs" id="log"></div>
+        <div class="bg-white p-2 rounded shadow text-xs">
+          <h4 class="font-semibold mb-1">Rekod</h4>
+          <div id="history">Tiada rekod.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUESTION MODAL -->
+  <div id="questionModal" class="fixed inset-0 hidden items-center justify-center z-50">
+    <div class="modal-backdrop absolute inset-0"></div>
+    <div class="relative bg-white rounded-lg shadow-2xl w-11/12 max-w-md p-4 z-10">
+      <h3 class="font-semibold">Soalan</h3>
+      <p id="qText" class="mt-2"></p>
+      <div id="qOptions" class="mt-2 grid gap-2"></div>
+      <button id="qOk" class="hidden mt-3 bg-indigo-600 text-white px-3 py-1 rounded">Tutup</button>
+    </div>
+  </div>
+
+  <!-- Popup -->
+  <div id="popup" class="fixed top-4 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow-lg hidden z-50"></div>
+
+<script>
+const TOTAL=30, QUESTION_CELLS=[3,6,9,12,15,18,21,24,27], BONUS=2,PENALTY=2;
+const diceSymbols=["⚀","⚁","⚂","⚃","⚄","⚅"];
+const icons={1:"🚀",30:"🏆",5:"🌞🌙",10:"☀️",15:"❄️",20:"🌸",25:"🍂"};
+const qBank=[
+ {q:"Kesan utama putaran Bumi?",options:["Musim","Siang & Malam","Solstis"],ans:1},
+ {q:"Fenomena akibat peredaran Bumi?",options:["Siang & Malam","Musim","Zon Masa"],ans:1},
+ {q:"Putaran Bumi ambil masa?",options:["24 jam","365 hari","30 hari"],ans:0},
+ {q:"Peredaran Bumi ambil masa?",options:["24 jam","365 ¼ hari","7 hari"],ans:1}
+];
+
+let pos=[0,0],score=[0,0],turn=0,gameOver=false,mode="2";
+
+const board=document.getElementById('board'),logEl=document.getElementById('log'),
+posP1=document.getElementById('posP1'),posP2=document.getElementById('posP2'),
+scoreP1=document.getElementById('scoreP1'),scoreP2=document.getElementById('scoreP2'),
+diceEl=document.getElementById('dice'),turnLabel=document.getElementById('turnLabel'),
+historyEl=document.getElementById('history');
+const qModal=document.getElementById('questionModal'),qText=document.getElementById('qText'),
+qOptions=document.getElementById('qOptions'),qOk=document.getElementById('qOk');
+const popup=document.getElementById('popup');
+const labelP1=document.getElementById('labelP1');
+const labelP2=document.getElementById('labelP2');
+
+function setMode(m){
+  mode=m;
+  document.getElementById('modeSelect').style.display="none";
+  reset();
+  updateTurnLabel();
+}
+function updateTurnLabel(){
+  if(mode==="1"){
+    labelP1.innerHTML=`Pemain 1 (Biru – Anda): Pos <span id="posP1">${pos[0]}</span> | Skor: <span id="scoreP1">${score[0]}</span>`;
+    labelP2.innerHTML=`Pemain 2 (Merah – Komputer 🤖): Pos <span id="posP2">${pos[1]}</span> | Skor: <span id="scoreP2">${score[1]}</span>`;
+  }else{
+    labelP1.innerHTML=`Pemain 1 (Biru): Pos <span id="posP1">${pos[0]}</span> | Skor: <span id="scoreP1">${score[0]}</span>`;
+    labelP2.innerHTML=`Pemain 2 (Merah): Pos <span id="posP2">${pos[1]}</span> | Skor: <span id="scoreP2">${score[1]}</span>`;
+  }
+}
+
+function showPopup(msg,color="bg-indigo-600"){
+  popup.className=`fixed top-4 left-1/2 -translate-x-1/2 ${color} text-white px-4 py-2 rounded-lg shadow-lg z-50`;
+  popup.textContent=msg;
+  popup.style.display="block";
+  setTimeout(()=>{popup.style.display="none";},3000);
+}
+function createBoard(){
+  board.innerHTML='';
+  for(let i=1;i<=TOTAL;i++){
+    const c=document.createElement('div');
+    c.className='cell '+['color1','color2','color3'][i%3];
+    if(i===1) c.classList.add('start'); if(i===TOTAL) c.classList.add('finish');
+    if(QUESTION_CELLS.includes(i)) c.classList.add('question');
+    c.id='cell-'+i;
+    const icon=icons[i]||(QUESTION_CELLS.includes(i)?"❓":"");
+    c.innerHTML=`<div class="cell-number">${i}</div><div>${icon}</div>${i===1?'Mula':i===TOTAL?'Finish':''}`;
+    board.appendChild(c);
+  }
+  placeTokens();
+}
+function placeTokens(){
+  document.querySelectorAll('.token').forEach(t=>t.remove());
+  if(pos[0]>0){let c=document.getElementById('cell-'+pos[0]);let t=document.createElement('div');t.className='token bg-indigo-600';t.textContent='1';c.appendChild(t);}
+  if(pos[1]>0){let c=document.getElementById('cell-'+pos[1]);let t=document.createElement('div');t.className='token bg-red-600';t.textContent='2';c.appendChild(t);}
+}
+function log(m){let d=document.createElement('div');d.textContent=m;logEl.prepend(d);}
+function updateUI(){
+  document.getElementById('posP1').textContent=pos[0];
+  document.getElementById('posP2').textContent=pos[1];
+  document.getElementById('scoreP1').textContent=score[0];
+  document.getElementById('scoreP2').textContent=score[1];
+  if(mode==="1" && turn===1){
+    turnLabel.textContent="Giliran: Komputer 🤖";
+  } else {
+    turnLabel.textContent=turn===0?'Pemain 1 (Biru)':'Pemain 2 (Merah)';
+  }
+}
+
+function rollDice(){
+ if(gameOver) return;
+ let r=Math.floor(Math.random()*6)+1;
+ diceEl.textContent=r;document.getElementById('diceIcon').textContent=diceSymbols[r-1];
+ let before=pos[turn];
+ let actor=(mode==="1" && turn===1)?"Komputer 🤖":"Pemain "+(turn+1);
+ log(`${actor} roll ${r} ${diceSymbols[r-1]} → dari ${before} ke ${before+r}`);
+ showPopup(`${actor} baling dadu: ${r} ${diceSymbols[r-1]}`);
+ move(r);
+}
+function move(steps){
+ pos[turn]+=steps;
+ let actor=(mode==="1" && turn===1)?"Komputer 🤖":"Pemain "+(turn+1);
+ if(pos[turn]>=TOTAL){
+   pos[turn]=TOTAL;updateUI();placeTokens();
+   log(`${actor} tiba di kotak ${TOTAL} 🏆`);
+   showPopup(`${actor} menang! 🏆`,"bg-green-600");
+   winner(turn);return;
+ }
+ updateUI();placeTokens();
+ log(`${actor} sekarang di kotak ${pos[turn]}`);
+ showPopup(`${actor} ke kotak ${pos[turn]}`);
+ if(QUESTION_CELLS.includes(pos[turn])) askQ(); else switchTurn();
+}
+function askQ(){
+ let q=qBank[Math.floor(Math.random()*qBank.length)];
+ qText.textContent=q.q; qOptions.innerHTML='';
+ q.options.forEach((o,i)=>{let b=document.createElement('button');b.textContent=o;b.className='border p-1 rounded';b.onclick=()=>ansQ(i,q.ans);qOptions.appendChild(b);});
+ qModal.classList.remove('hidden');qModal.classList.add('flex');
+ if(mode==="1" && turn===1){ // komputer jawab
+   setTimeout(()=>{ansQ(Math.floor(Math.random()*q.options.length),q.ans);},1500);
+ }
+}
+function ansQ(i,ans){
+ Array.from(qOptions.children).forEach(b=>b.disabled=true);
+ let actor=(mode==="1" && turn===1)?"Komputer 🤖":"Pemain "+(turn+1);
+ if(i===ans){score[turn]++;pos[turn]+=BONUS;log(`${actor} betul ✅ → +2 ke ${pos[turn]}`);showPopup(`${actor} betul! +2 langkah 🎉`,"bg-green-600");}
+ else{pos[turn]-=PENALTY;if(pos[turn]<0)pos[turn]=0;log(`${actor} salah ❌ → -2 ke ${pos[turn]}`);showPopup(`${actor} salah! -2 langkah ❌`,"bg-red-600");}
+ placeTokens();updateUI();qOk.classList.remove('hidden');
+ qOk.onclick=()=>{qModal.classList.add('hidden');qOk.classList.add('hidden');if(pos[turn]>=TOTAL){winner(turn);}else switchTurn();};
+}
+function switchTurn(){turn=turn===0?1:0;updateUI();if(mode==="1" && turn===1 && !gameOver){setTimeout(rollDice,1500);}}
+function winner(p){gameOver=true;let actor=(mode==="1" && p===1)?"Komputer 🤖":"Pemain "+(p+1);log(`${actor} menang!`);saveHistory(p);}
+function saveHistory(w){
+ let rec={date:new Date().toLocaleString(),winner:(mode==="1" && w===1)?"Komputer 🤖":"P"+(w+1),s1:score[0],s2:score[1]};
+ let arr=JSON.parse(localStorage.getItem('geoHistory')||'[]');
+ arr.unshift(rec);if(arr.length>5)arr.pop();
+ localStorage.setItem('geoHistory',JSON.stringify(arr));renderHistory();
+}
+function renderHistory(){
+ let arr=JSON.parse(localStorage.getItem('geoHistory')||'[]');
+ if(arr.length===0){historyEl.textContent='Tiada rekod.';return;}
+ historyEl.innerHTML=arr.map(r=>`📌 ${r.date}: ${r.winner} (P1=${r.s1}, P2=${r.s2})`).join('<br>');
+}
+function reset(){pos=[0,0];score=[0,0];turn=0;gameOver=false;createBoard();updateUI();updateTurnLabel();}
+
+document.getElementById('rollBtn').onclick=rollDice;
+document.getElementById('endTurnBtn').onclick=switchTurn;
+document.getElementById('resetBtn').onclick=reset;
+
+createBoard();updateUI();renderHistory();
+</script>
+</body>
+</html>
